@@ -1,0 +1,26 @@
+<package format="3">
+  <name>ros_roundtrip_latency_test</name>
+  <version>0.1.0</version>
+  <description>
+    Round trip latency test for ROS messages
+  </description>
+  <maintainer email="wason@wasontech.com">John Wason</maintainer>
+  <license>Apache 2.0</license>
+
+  <author>John Wason</author>
+  
+  <depend>roscpp</depend>
+  <depend>std_msgs</depend>
+
+  <build_depend>message_generation</build_depend>
+
+  <exec_depend>message_runtime</exec_depend>
+  <build_depend>rosidl_default_generators</build_depend>
+  <exec_depend>rosidl_default_runtime</exec_depend>
+
+  <member_of_group>rosidl_interface_packages</member_of_group>
+
+  <export>    
+    <build_type>cmake</build_type>
+  </export>  
+</package>

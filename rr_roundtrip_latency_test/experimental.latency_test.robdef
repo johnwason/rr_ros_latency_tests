@@ -1,0 +1,11 @@
+service experimental.latency_test
+
+struct Payload
+    field uint64 seqno
+    field uint8[] payload
+end
+
+object latency_test_obj
+    wire Payload ping [writeonly]
+    wire Payload pong [readonly]
+end
