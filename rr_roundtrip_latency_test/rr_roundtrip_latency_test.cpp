@@ -20,6 +20,8 @@ int main(int argc, char *argv[])
         ("server","run server")
         ("single-thread","run in single thread mode")
         ("disable-asyncio","disable async-io")
+        ("iters", po::value<uint32_t>(), "number of iterations to run (default 100000) - client only")
+        ("payload-size", po::value<uint32_t>(), "size of \"payload\" field in bytes (default 8) - client only")
         ("url", po::value<std::string>(), "client connection URL")
     ;
 
@@ -64,7 +66,7 @@ public:
 
                 lt::PayloadPtr ret(new lt::Payload());
                 ret->seqno = payload->seqno;
-                ret->payload = payload->payload;
+                ret->payload = AttachRRArrayCopy(payload->payload->data(), payload->payload->size());
                 pong->SetOutValue(ret);
             }
         );
@@ -112,6 +114,21 @@ int run_client(int argc, char *argv[], const po::variables_map& vm)
     }
     std::string url = vm["url"].as<std::string>();
 
+    uint32_t iters = 100000;
+    uint32_t payload_size = 8;
+    
+    if (vm.count("iters"))
+    {
+        iters = vm["iters"].as<uint32_t>();
+    }
+
+    if (vm.count("payload-size"))
+    {
+        payload_size = vm["payload-size"].as<uint32_t>();
+    }
+
+    std::cout << "Running latency test client payload-size: " << payload_size << " iters: " << iters << std::endl;
+
     boost::asio::io_context my_io_context;
 	boost::asio::io_context::work work(my_io_context);
     RR_SHARED_PTR<IOContextThreadPool> io_context_thread_pool;
@@ -158,15 +175,17 @@ int run_client(int argc, char *argv[], const po::variables_map& vm)
     
     bool done = false;
 
-    uint64_t count = 0;
-    uint64_t iters = 100000;
-
+    uint32_t count = 0;
+    
     high_resolution_clock::time_point t1;
     high_resolution_clock::time_point t2;
 
     pong->WireValueChanged.connect(
         [&](const WireConnectionPtr<lt::PayloadPtr>& source, const lt::PayloadPtr payload, const TimeSpec& ts)
         {
+            assert(val->payload->front() == (uint8_t)(count % 256));
+            assert(val->payload->back() == (uint8_t)(count % 256));
+            assert(val->payload->size() == payload_size);
             count++;
             if (count >= iters)
             {
@@ -177,14 +196,18 @@ int run_client(int argc, char *argv[], const po::variables_map& vm)
 
             lt::PayloadPtr val2(new lt::Payload());
             val2->seqno = payload->seqno;
-            val2->payload = AllocateEmptyRRArray<uint8_t>(8);;
+            val2->payload = AllocateEmptyRRArray<uint8_t>(payload_size);
+            val2->payload->front() = (uint8_t)(count % 256);
+            val2->payload->back() = (uint8_t)(count % 256);
             ping->SetOutValue(val2);
         }
     );
 
     lt::PayloadPtr val(new lt::Payload());
     val->seqno = count;
-    val->payload = AllocateEmptyRRArray<uint8_t>(8);
+    val->payload = AllocateEmptyRRArray<uint8_t>(payload_size);
+    val->payload->front() = (uint8_t)(count % 256);
+    val->payload->back() = (uint8_t)(count % 256);
     ping->SetOutValue(val);
     t1 = high_resolution_clock::now();
 

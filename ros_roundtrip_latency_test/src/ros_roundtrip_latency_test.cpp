@@ -3,109 +3,137 @@
 
 #include <sstream>
 #include <chrono>
+#include <boost/program_options.hpp>
 
 using namespace std::chrono;
+namespace po = boost::program_options;
+
+int run_client(int argc, char *argv[], const po::variables_map& vm);
+int run_server(int argc, char *argv[], const po::variables_map& vm);
 
 int main(int argc, char **argv)
 {  
+    po::options_description desc("Allowed options");
+    desc.add_options()
+        ("help","produce help message")
+        ("client","run client")
+        ("server","run server")
+        ("single-thread","run in single thread mode")
+        ("disable-asyncio","disable async-io")
+        ("iters", po::value<uint32_t>(), "number of iterations to run (default 100000) - client only")
+        ("payload-size", po::value<uint32_t>(), "size of \"payload\" field in bytes (default 8) - client only")
+        ("url", po::value<std::string>(), "client connection URL")
+    ;   
 
-    std::vector<std::string> args(argv, argv+argc);
-
-    if (args.size() < 4)
+    po::variables_map vm;
+    po::store(po::command_line_parser(argc, argv).options(desc).allow_unregistered().run(), vm);
+    po::notify(vm);
+       
+    if (vm.count("client"))
     {
-        std::cout << "requires \"command\", \"buffer_size\", and \"iters\"" << std::endl;
-        return 1;
+        return run_client(argc,argv,vm);
     }
 
-    std::string command = args.at(1);
-    if (command != "client" && command != "server")
+    if (vm.count("server"))
     {
-        std::cout << "invalid command, expects \"client\" or \"server\"" << std::endl;
+        return run_server(argc,argv,vm);
     }
 
-    
+    std::cout << "error: must specify --client or --server" << std::endl;
+    return 1;
+}
 
-    size_t payload_size = boost::lexical_cast<size_t>(args.at(2));
-    size_t iters = boost::lexical_cast<size_t>(args.at(3));
-    std::vector<uint8_t> payload(payload_size);
-    for (size_t i=0; i<payload_size; i++)
+int run_client(int argc, char *argv[], const po::variables_map& vm)
+{
+    uint32_t iters = 100000;
+    uint32_t payload_size = 8;
+
+    if (vm.count("iters"))
     {
-        payload[i] = (uint8_t)(i % 256);
+        iters = vm["iters"].as<uint32_t>();
     }
 
-    if (command == "client")
+    if (vm.count("payload-size"))
     {
-        ros::init(argc, argv, "ros_latency_test_client");
+        payload_size = vm["payload-size"].as<uint32_t>();
+    }
 
-        ros::NodeHandle n;
+    std::vector<uint8_t> payload;
+    payload.resize(payload_size);
 
-        uint32_t count = 0;
-        bool done = false;
+    std::cout << "Running latency test client payload-size: " << payload_size << " iters: " << iters << std::endl;
 
-        ros::Publisher ping_pub = n.advertise<ros_roundtrip_latency_test::LatencyTestPayload>("latencytest/ping", 1000);
-        ros::Subscriber pong_sub = n.subscribe<ros_roundtrip_latency_test::LatencyTestPayload>("latencytest/pong", 1000, 
-            [&](const ros_roundtrip_latency_test::LatencyTestPayload::ConstPtr& msg)
+    ros::init(argc, argv, "ros_latency_test_client");
+
+    ros::NodeHandle n;
+
+    uint32_t count = 0;
+    bool done = false;
+
+    ros::Publisher ping_pub = n.advertise<ros_roundtrip_latency_test::LatencyTestPayload>("latencytest/ping", 1000);
+    ros::Subscriber pong_sub = n.subscribe<ros_roundtrip_latency_test::LatencyTestPayload>("latencytest/pong", 1000, 
+        [&](const ros_roundtrip_latency_test::LatencyTestPayload::ConstPtr& msg)
+        {            
+            if (msg->seqno >= count)
             {
-                if (msg->seqno >= count)
+                assert(msg.payload.front() == (uint8_t)(count % 256));
+                assert(msg.payload.back() == (uint8_t)(count % 256));
+                assert(msg.payload.size() == payload_size);
+                ++ count;
+                if (count >= iters)
                 {
-                    ++ count;
-                    if (count >= iters)
-                    {
-                        done = true;
-                    }
-                    ros_roundtrip_latency_test::LatencyTestPayload msg2;
-                    msg2.seqno = count;
-                    msg2.payload = payload;
-                    ping_pub.publish(msg2);                    
+                    done = true;
                 }
-                    
+                ros_roundtrip_latency_test::LatencyTestPayload msg2;
+                msg2.seqno = count;
+                msg2.payload.resize(payload_size);
+                msg2.payload.front() = (uint8_t)(count % 256);
+                msg2.payload.back() = (uint8_t)(count % 256);
+                ping_pub.publish(msg2);                    
             }
-        );
-
-        ros::Duration(5).sleep();
-        
-        high_resolution_clock::time_point t1 = high_resolution_clock::now();
-        ros_roundtrip_latency_test::LatencyTestPayload msg;
-        msg.seqno = count;
-        msg.payload = payload;
-
-        ping_pub.publish(msg);
-
-        while (!done && ros::ok())
-        {
-            ros::spinOnce();
+                
         }
+    );
 
-        high_resolution_clock::time_point t2 = high_resolution_clock::now();
-        duration<double> time_span = duration_cast<duration<double>>(t2 - t1);
+    ros::Duration(0.5).sleep();
+    
+    high_resolution_clock::time_point t1 = high_resolution_clock::now();
+    ros_roundtrip_latency_test::LatencyTestPayload msg;
+    msg.seqno = count;
+    msg.payload = payload;
 
-        std::cout << "It took me " << time_span.count() << " seconds.";
+    ping_pub.publish(msg);
 
-        return 0;
-    }
-
-    if (command == "server")
+    while (!done && ros::ok())
     {
-
-        ros::init(argc, argv, "ros_latency_test_server");
-
-        ros::NodeHandle n;
-
-        ros::Publisher pong_pub = n.advertise<ros_roundtrip_latency_test::LatencyTestPayload>("latencytest/pong", 1000);
-        ros::Subscriber ping_sub = n.subscribe<ros_roundtrip_latency_test::LatencyTestPayload>("latencytest/ping", 1000, 
-            [&](const ros_roundtrip_latency_test::LatencyTestPayload::ConstPtr& msg)
-            {
-                auto msg2 = *msg;
-                pong_pub.publish(msg2);
-            }
-        );
-
-        ros::spin();
-
-        return 0;
+        ros::spinOnce();
     }
 
+    high_resolution_clock::time_point t2 = high_resolution_clock::now();
+    duration<double> time_span = duration_cast<duration<double>>(t2 - t1);
+
+    std::cout << "It took me " << time_span.count() << " seconds." << std::endl;
+
+    return 0;
+}
 
 
-    return 2;
+int run_server(int argc, char *argv[], const po::variables_map& vm)
+{
+    ros::init(argc, argv, "ros_latency_test_server");
+
+    ros::NodeHandle n;
+
+    ros::Publisher pong_pub = n.advertise<ros_roundtrip_latency_test::LatencyTestPayload>("latencytest/pong", 1000);
+    ros::Subscriber ping_sub = n.subscribe<ros_roundtrip_latency_test::LatencyTestPayload>("latencytest/ping", 1000, 
+        [&](const ros_roundtrip_latency_test::LatencyTestPayload::ConstPtr& msg)
+        {
+            auto msg2 = *msg;
+            pong_pub.publish(msg2);
+        }
+    );
+
+    ros::spin();
+
+    return 0;
 }
