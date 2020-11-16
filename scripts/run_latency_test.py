@@ -10,7 +10,7 @@ ros_executable = "./ros_roundtrip_latency_test"
 ros2_executable = "./ros_roundtrip_latency_test_p"
 
 N=5
-payload_sizes_iters = [(8,10000),(64,10000),(1024,10000),(1048576,100)]
+payload_sizes_iters = [(8,10000),(64,10000),(1024,1000),(1048576,100)]
 
 def main():
     parser = argparse.ArgumentParser(description = "Run Robot Raconteur/ROS latency tests")
@@ -48,9 +48,13 @@ def run_client_args(client_args, fname):
     for payload,iters in payload_sizes_iters:
         exec_times = []
         for i in range(N):
-            res = subprocess.check_output(client_args + [f"--iters={iters}", f"--payload-size={payload}"])
+            try:
+                res = subprocess.check_output(client_args + [f"--iters={iters}", f"--payload-size={payload}"])
+            except Exception as e:
+                res = e.output
+                print("Warning: client returned non-zero exit")
             #print(res)
-            exec_time = str(extract_time(res))
+            exec_time = str(extract_time(res.decode('ascii')))
             #print(f"Parsed time of: {exec_time}")
             exec_times.append(exec_time)
         result = " ".join([str(x) for x in [payload,iters] + exec_times]) + "\n"
@@ -73,7 +77,7 @@ def run_server(config):
         assert False, "Invalid configuration"
 
 def extract_time(res):
-    match = re.search("It took me ([\\d\\.]+) seconds.",res.decode('ascii'))
+    match = re.search("It took me ([\\d\\.]+) seconds.",res)
     #print(match)
     return float(match.group(1))
 

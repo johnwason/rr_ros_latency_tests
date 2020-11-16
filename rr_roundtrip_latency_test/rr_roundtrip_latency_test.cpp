@@ -183,9 +183,9 @@ int run_client(int argc, char *argv[], const po::variables_map& vm)
     pong->WireValueChanged.connect(
         [&](const WireConnectionPtr<lt::PayloadPtr>& source, const lt::PayloadPtr payload, const TimeSpec& ts)
         {
-            assert(val->payload->front() == (uint8_t)(count % 256));
-            assert(val->payload->back() == (uint8_t)(count % 256));
-            assert(val->payload->size() == payload_size);
+            assert(payload->payload->front() == (uint8_t)(count % 256));
+            assert(payload->payload->back() == (uint8_t)(count % 256));
+            assert(payload->payload->size() == payload_size);
             count++;
             if (count >= iters)
             {
