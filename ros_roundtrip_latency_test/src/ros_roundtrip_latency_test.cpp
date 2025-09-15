@@ -4,6 +4,7 @@
 #include <sstream>
 #include <chrono>
 #include <boost/program_options.hpp>
+#include <fstream>
 
 using namespace std::chrono;
 namespace po = boost::program_options;
@@ -70,16 +71,21 @@ int run_client(int argc, char *argv[], const po::variables_map& vm)
     uint32_t count = 0;
     bool done = false;
 
+    std::vector<high_resolution_clock::time_point> t3;
+    t3.reserve(iters);
+
+
     ros::Publisher ping_pub = n.advertise<ros_roundtrip_latency_test::LatencyTestPayload>("latencytest/ping", 1000);
     ros::Subscriber pong_sub = n.subscribe<ros_roundtrip_latency_test::LatencyTestPayload>("latencytest/pong", 1000, 
         [&](const ros_roundtrip_latency_test::LatencyTestPayload::ConstPtr& msg)
         {            
             if (msg->seqno >= count)
             {
-                assert(msg.payload.front() == (uint8_t)(count % 256));
-                assert(msg.payload.back() == (uint8_t)(count % 256));
-                assert(msg.payload.size() == payload_size);
+                assert(msg->payload.front() == (uint8_t)(count % 256));
+                assert(msg->payload.back() == (uint8_t)(count % 256));
+                assert(msg->payload.size() == payload_size);
                 ++ count;
+                t3.push_back(high_resolution_clock::now());
                 if (count >= iters)
                 {
                     done = true;
@@ -89,7 +95,7 @@ int run_client(int argc, char *argv[], const po::variables_map& vm)
                 msg2.payload.resize(payload_size);
                 msg2.payload.front() = (uint8_t)(count % 256);
                 msg2.payload.back() = (uint8_t)(count % 256);
-                ping_pub.publish(msg2);                    
+                ping_pub.publish(msg2);            
             }
                 
         }
@@ -113,6 +119,16 @@ int run_client(int argc, char *argv[], const po::variables_map& vm)
     duration<double> time_span = duration_cast<duration<double>>(t2 - t1);
 
     std::cout << "It took me " << time_span.count() << " seconds." << std::endl;
+
+    // Save data
+    std::ofstream myfile;
+    myfile.open ("latency_test_data.csv");
+    // write time since epoch in microseconds    
+    myfile << std::chrono::duration_cast<nanoseconds>(t1.time_since_epoch()).count() << std::endl;
+    for (auto& e : t3)
+    {
+        myfile << std::chrono::duration_cast<nanoseconds>(e.time_since_epoch()).count() << std::endl;
+    }
 
     return 0;
 }

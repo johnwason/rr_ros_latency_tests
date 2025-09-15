@@ -179,6 +179,8 @@ int run_client(int argc, char *argv[], const po::variables_map& vm)
     
     high_resolution_clock::time_point t1;
     high_resolution_clock::time_point t2;
+    std::vector<high_resolution_clock::time_point> t3;
+    t3.reserve(iters);
 
     pong->WireValueChanged.connect(
         [&](const WireConnectionPtr<lt::PayloadPtr>& source, const lt::PayloadPtr payload, const TimeSpec& ts)
@@ -187,6 +189,7 @@ int run_client(int argc, char *argv[], const po::variables_map& vm)
             assert(payload->payload->back() == (uint8_t)(count % 256));
             assert(payload->payload->size() == payload_size);
             count++;
+            t3.push_back(high_resolution_clock::now());
             if (count >= iters)
             {
                 t2 = high_resolution_clock::now();
@@ -218,6 +221,16 @@ int run_client(int argc, char *argv[], const po::variables_map& vm)
 
     duration<double> time_span = duration_cast<duration<double>>(t2 - t1);
     std::cout << "It took me " << time_span.count() << " seconds." << std::endl;
+
+    // Save data
+    std::ofstream myfile;
+    myfile.open ("latency_test_data.csv");
+    // write time since epoch in microseconds    
+    myfile << std::chrono::duration_cast<nanoseconds>(t1.time_since_epoch()).count() << std::endl;
+    for (auto& e : t3)
+    {
+        myfile << std::chrono::duration_cast<nanoseconds>(e.time_since_epoch()).count() << std::endl;
+    }
 
     return 0;
 }
